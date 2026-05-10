@@ -49,11 +49,25 @@ python3 scripts/missav_magnet.py -q <url>
 # 指定代理
 python3 scripts/missav_magnet.py -p <proxy> <url>
 
-# 多 URL 并发（最多 5 线程）
+# 多 URL 并发（2-9 个，最多 5 线程）
 python3 scripts/missav_magnet.py <url1> <url2> <url3>
+
+# 批量模式：≥10 个链接自动启用紧凑输出，并发降到 3
+python3 scripts/missav_magnet.py <url1> <url2> ... <url10>
 ```
 
 默认使用详细模式。仅当用户明确要求"只要链接"或"安静输出"时使用 `-q`。
+
+### 批量处理（≥10 个链接）
+
+当用户一次性提供 10 个以上链接时：
+
+1. **自动切换紧凑模式**：每个 URL 仅输出一行结果（标题 + 体积 + 链接），避免输出洪水中断上下文
+2. **降低并发**：从 5 线程降到 3 线程，减少触发 Cloudflare 防护的概率
+3. **单行格式**：`✓ 番号标题  体积  磁力链接`
+4. **最终汇总**：所有 URL 处理完后列出全部最佳链接清单
+
+无需手动指定参数，脚本检测到 ≥10 个 URL 自动切换。也可手动启用 `-b`。
 
 ### 4. 展示结果
 

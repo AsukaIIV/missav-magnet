@@ -447,28 +447,37 @@ def sort_candidates(cands):
 
 # ── 主流程 ────────────────────────────────────────────────
 
-def process_url(url, proxy=None, verbose=True):
-    if verbose:
+def process_url(url, proxy=None, verbose=True, batch=False):
+    if verbose and not batch:
         print(f"\n{'─'*60}")
         print(f"▸ {url}")
 
-    html = fetch_page(url, proxy=proxy, verbose=verbose)
+    html = fetch_page(url, proxy=proxy, verbose=(verbose and not batch))
     if not html:
+        if batch:
+            print(f"  ❌ {url}")
         return None
 
     title = extract_title(html)
-    if title and verbose:
+    if title and verbose and not batch:
         print(f"  📼 {title}")
 
     cands = extract_candidates(html)
     if not cands:
-        if verbose:
+        if batch:
+            print(f"  ❌ {url} — 未找到下载链接")
+        elif verbose:
             print("  ❌ 未找到任何下载链接")
         return None
 
     cands = sort_candidates(cands)
+    best = cands[0]
 
-    if verbose:
+    if batch:
+        size = best.get("size_str") or "?"
+        tag = title or url
+        print(f"  ✓ {tag[:50]}  {size:>8}  {best['url'][:80]}")
+    elif verbose:
         print(f"\n  📋 {len(cands)} 个候选:")
         for i, c in enumerate(cands):
             size = c["size_str"] or "未知大小"
@@ -480,8 +489,7 @@ def process_url(url, proxy=None, verbose=True):
                 short = short[:92] + "..."
             print(f"   {star} [{i+1}] {type_label} {size:>10}  {date}  {short}")
 
-    best = cands[0]
-    if verbose:
+    if verbose and not batch:
         link_type = "磁力" if best.get("type") == "magnet" else "网盘下载"
         print(f"\n  ✅ 最佳{link_type}:")
         print(f"  {best['url']}")
@@ -525,6 +533,7 @@ def main():
     parser.add_argument("-j", "--json", action="store_true", help="JSON 格式输出")
     parser.add_argument("-o", "--output", metavar="FILE", help="将最佳链接写入文件")
     parser.add_argument("-p", "--proxy", metavar="PROXY", help="指定代理 (如 http://127.0.0.1:7890)")
+    parser.add_argument("-b", "--batch", action="store_true", help="批量模式：每行一个结果，适合 10+ 链接")
     parser.add_argument("--all", action="store_true", help="显示所有候选链接 (而不仅是最佳)")
     args = parser.parse_args()
 
@@ -545,9 +554,17 @@ def main():
 
     verbose = not args.quiet and not args.json
 
+    # 批量模式：>=10 个 URL 自动启用（除非用户明确要求 verbose）
+    batch = args.batch or (len(urls) >= 10 and not args.quiet and not args.json)
+    if batch:
+        verbose = False  # 批量模式关闭详细输出，改用紧凑格式
+        max_workers = min(3, len(urls))  # 大批量降低并发，减少触发 Cloudflare 防护
+    else:
+        max_workers = min(5, len(urls))
+
     results = []
-    with ThreadPoolExecutor(max_workers=min(5, len(urls))) as pool:
-        futures = {pool.submit(process_url, u, proxy, verbose): u for u in urls}
+    with ThreadPoolExecutor(max_workers=max_workers) as pool:
+        futures = {pool.submit(process_url, u, proxy, verbose, batch): u for u in urls}
         for f in as_completed(futures):
             r = f.result()
             if r:
@@ -564,6 +581,11 @@ def main():
     elif args.quiet:
         for r in results:
             print(r["best_link"])
+    elif batch:
+        print(f"\n{'='*60}")
+        print(f"✅ 完成 — {len(results)}/{len(urls)} 成功")
+        for r in results:
+            print(f"  {r['best_link']}")
     else:
         print(f"\n{'='*60}")
         print(f"✅ 完成 — {len(results)}/{len(urls)} 成功\n")
